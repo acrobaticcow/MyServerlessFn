@@ -1,6 +1,6 @@
 import fs from "fs";
-import ffmpegPath from "ffmpeg-static";
-import { path as ffprobePath } from "ffprobe-static";
+import { path as ffmpegPath } from "@ffmpeg-installer/ffmpeg";
+import { path as ffprobePath } from "@ffprobe-installer/ffprobe";
 import ffmpeg from "fluent-ffmpeg";
 import formidable from "formidable-serverless";
 import path from "path";
