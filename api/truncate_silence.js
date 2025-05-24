@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   const form = new formidable.IncomingForm({
-    uploadDir: path.join(process.cwd(), "tmp"),
+    uploadDir: "/tmp",
     keepExtensions: true,
   });
 
@@ -76,7 +76,7 @@ export default async function handler(req, res) {
         const s = segments[i];
 
         if (s.type === "audio") {
-          const segFile = path.join(process.cwd(), "tmp", `seg_${i}.wav`);
+          const segFile = `/tmp/seg_${i}.wav`;
           await new Promise((resolve, reject) => {
             ffmpeg(inputPath)
               .setStartTime(s.start)
@@ -88,11 +88,7 @@ export default async function handler(req, res) {
           });
           segmentFiles.push(segFile);
         } else {
-          const segFile = path.join(
-            process.cwd(),
-            "tmp",
-            `seg_${i}_silence.wav`
-          );
+          const segFile = `/tmp/seg_${i}_silence.wav`;
           await new Promise((resolve, reject) => {
             ffmpeg()
               .input("anullsrc=channel_layout=mono:sample_rate=44100")
@@ -108,14 +104,14 @@ export default async function handler(req, res) {
       }
 
       // 4. Write concat list
-      const listFile = path.join(process.cwd(), "tmp", "list.txt");
+      const listFile = "/tmp/list.txt";
       fs.writeFileSync(
         listFile,
         segmentFiles.map((f) => `file '${f}'`).join("\n")
       );
 
       // 5. Concat to output
-      const outputPath = path.join(process.cwd(), "tmp", "output.wav");
+      const outputPath = "/tmp/output.wav";
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(listFile)
