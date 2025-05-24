@@ -172,7 +172,6 @@ function getSegments(logs, silenceDuration, audioLength) {
     }
   }
   console.log("🚀 ~ truncate_silence.js ~ getSegments ~ segments:", segments);
-
   return segments;
 }
 
