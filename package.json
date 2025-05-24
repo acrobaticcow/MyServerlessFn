@@ -3,8 +3,7 @@
 	"version": "0.0.1",
 	"license": "MIT",
 	"scripts": {
-		"preinstall": "rm -rf ./node_modules ./yarn.lock && yarn cache clean --force",
-		"install": "yarn"
+		"preinstall": "rm -rf ./node_modules ./yarn.lock && yarn cache clean --force"
 	},
 	"optionalDependencies": {
 		"@ffprobe-installer/linux-x64": "5.2.0"
