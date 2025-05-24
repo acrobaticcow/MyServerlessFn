@@ -10,5 +10,8 @@
 	},
 	"devDependencies": {
 		"vercel": "^41.7.6"
+	},
+	"optionalDependencies": {
+		"@ffprobe-installer/linux-x64": "5.2.0"
 	}
 }
