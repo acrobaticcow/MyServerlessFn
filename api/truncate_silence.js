@@ -3,6 +3,7 @@ import { path as ffmpegPath } from "@ffmpeg-installer/ffmpeg";
 import ffmpeg from "fluent-ffmpeg";
 import formidable from "formidable-serverless";
 import path from "path";
+import os from "node:os";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -12,21 +13,45 @@ export const config = {
   },
 };
 
+const tmpPath = os.tmpdir();
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
   const form = new formidable.IncomingForm({
-    uploadDir: "/tmp",
+    uploadDir: tmpPath,
     keepExtensions: true,
   });
 
   form.parse(req, async (err, fields, files) => {
     if (err) return res.status(500).send("Upload error");
 
-    // clearTmpFolder();
-
-    const inputPath = files.audio.path;
+    const inputPath = files.audio?.path;
+    let threshold, detection_duration, truncate_to;
     const silenceLog = [];
+
+    if (!inputPath) {
+      return res.status(400).send("Missing audio file");
+    }
+
+    try {
+      threshold = parseOrError(fields.threshold, "threshold", {
+        min: -100,
+        max: 0,
+      });
+      detection_duration = parseOrError(
+        fields.detection_duration,
+        "detection_duration",
+        {
+          min: 0.01,
+        }
+      );
+      truncate_to = parseOrError(fields.truncate_to, "truncate_to", {
+        min: 0.0,
+      });
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
 
     // Example usage:
     try {
@@ -35,7 +60,9 @@ export default async function handler(req, res) {
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .noVideo()
-          .audioFilters("silencedetect=noise=-35dB:d=0.3")
+          .audioFilters(
+            `silencedetect=noise=${threshold}dB:d=${detection_duration}`
+          )
           .outputOptions("-f", "null") // force null output
           .on("stderr", (line) => {
             // console.log("🚀 ~ truncate_silence.js ~ .on ~ line:", line);
@@ -56,17 +83,8 @@ export default async function handler(req, res) {
               : ""
           );
       });
-      //   console.log(
-      //     "🚀 ~ truncate_silence.js ~ form.parse ~ silenceLog:",
-      //     silenceLog
-      //   );
-
       // 2. Compute segments
-      const segments = getSegments(silenceLog, 0.2, audioLength);
-      //   console.log(
-      //     "🚀 ~ truncate_silence.js ~ form.parse ~ segments:",
-      //     segments
-      //   );
+      const segments = getSegments(silenceLog, truncate_to, audioLength);
       const segmentFiles = [];
 
       // 3. Extract audio segments and generate silences
@@ -74,7 +92,7 @@ export default async function handler(req, res) {
         const s = segments[i];
 
         if (s.type === "audio") {
-          const segFile = `/tmp/seg_${i}.wav`;
+          const segFile = path.join(tmpPath, `seg_${i}.wav`);
           await new Promise((resolve, reject) => {
             ffmpeg(inputPath)
               .setStartTime(s.start)
@@ -86,7 +104,7 @@ export default async function handler(req, res) {
           });
           segmentFiles.push(segFile);
         } else {
-          const segFile = `/tmp/seg_${i}_silence.wav`;
+          const segFile = path.join(tmpPath, `seg_${i}_silence.wav`);
           await new Promise((resolve, reject) => {
             ffmpeg()
               .input("anullsrc=channel_layout=mono:sample_rate=44100")
@@ -102,14 +120,14 @@ export default async function handler(req, res) {
       }
 
       // 4. Write concat list
-      const listFile = "/tmp/list.txt";
+      const listFile = path.join(tmpPath, "list.txt");
       fs.writeFileSync(
         listFile,
         segmentFiles.map((f) => `file '${f}'`).join("\n")
       );
 
       // 5. Concat to output
-      const outputPath = "/tmp/output.wav";
+      const outputPath = path.join(tmpPath, "output.wav");
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(listFile)
@@ -121,7 +139,12 @@ export default async function handler(req, res) {
           .run();
       });
 
-      res.setHeader("Content-Type", "audio/wav");
+      const stat = fs.statSync(outputPath);
+      res.writeHead(200, {
+        "Content-Type": "audio/wav",
+        "Content-Length": stat.size,
+        "Content-Disposition": 'attachment; filename="truncate_silence.wav"',
+      });
       fs.createReadStream(outputPath).pipe(res);
     } catch (err) {
       console.error("Processing error:", err);
@@ -139,10 +162,6 @@ function getSegments(logs, silenceDuration, audioLength) {
     if (logs[i].type === "start" && logs[i + 1]?.type === "end") {
       const start = logs[i].time;
       const end = logs[i + 1].time;
-
-      if (start >= 15.317) {
-        console.log();
-      }
 
       if (start > lastEnd) {
         segments.push({
@@ -169,7 +188,6 @@ function getSegments(logs, silenceDuration, audioLength) {
       i++; // skip next
     }
   }
-  console.log("🚀 ~ truncate_silence.js ~ getSegments ~ segments:", segments);
   return segments;
 }
 
@@ -213,3 +231,19 @@ function getDurationWithFFmpeg(filePath) {
 // )
 //   .then((duration) => console.log(`Duration: ${duration} seconds`))
 //   .catch((err) => console.error("Failed to get duration:", err));
+
+const parseOrError = (value, name, options = {}) => {
+  const num = parseFloat(value);
+  if (isNaN(num)) {
+    throw new Error(`Invalid ${name}: must be a number`);
+  }
+
+  if ("min" in options && num < options.min) {
+    throw new Error(`${name} must be >= ${options.min}`);
+  }
+  if ("max" in options && num > options.max) {
+    throw new Error(`${name} must be <= ${options.max}`);
+  }
+
+  return num;
+};
