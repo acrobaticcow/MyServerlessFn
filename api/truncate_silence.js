@@ -1,12 +1,10 @@
 import fs from "fs";
 import { path as ffmpegPath } from "@ffmpeg-installer/ffmpeg";
-import { path as ffprobePath } from "@ffprobe-installer/ffprobe";
 import ffmpeg from "fluent-ffmpeg";
 import formidable from "formidable-serverless";
 import path from "path";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
-ffmpeg.setFfprobePath(ffprobePath);
 
 export const config = {
   api: {
@@ -33,7 +31,7 @@ export default async function handler(req, res) {
     // Example usage:
     try {
       // 1. Detect silence
-      const audioLength = await getAudioDuration(inputPath);
+      const audioLength = await getDurationWithFFmpeg(inputPath);
       await new Promise((resolve, reject) => {
         ffmpeg(inputPath)
           .noVideo()
@@ -181,14 +179,37 @@ function clearTmpFolder() {
   files.forEach((file) => fs.unlinkSync(path.join(tmpDir, file)));
 }
 
-function getAudioDuration(filePath) {
+function getDurationWithFFmpeg(filePath) {
   return new Promise((resolve, reject) => {
-    ffmpeg.ffprobe(filePath, (err, metadata) => {
-      if (err) return reject(err);
-
-      const durationInSeconds = metadata.format.duration;
-
-      resolve(durationInSeconds);
-    });
+    ffmpeg(filePath)
+      .output("-") // dummy output
+      .on("start", (commandLine) => {
+        // Nothing needed here, just to see the cmd if you're debugging
+      })
+      .on("stderr", (stderrLine) => {
+        const match = stderrLine.match(/Duration: (\d+):(\d+):(\d+\.\d+)/);
+        if (match) {
+          const hours = parseInt(match[1], 10);
+          const minutes = parseInt(match[2], 10);
+          const seconds = parseFloat(match[3]);
+          const duration = hours * 3600 + minutes * 60 + seconds;
+          resolve(duration);
+        }
+      })
+      .on("error", (err) => {
+        reject(err);
+      })
+      .on("end", () => {
+        // Edge case: duration not found before process ended
+        reject(new Error("Could not determine duration"));
+      })
+      .run();
   });
 }
+
+// Usage
+// getDurationWithFFmpeg(
+//   "D:/Code/MyServerlessFn/Automation_Test_-vi-_part_1_-_79_words.mp3"
+// )
+//   .then((duration) => console.log(`Duration: ${duration} seconds`))
+//   .catch((err) => console.error("Failed to get duration:", err));
