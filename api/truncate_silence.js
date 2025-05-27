@@ -152,11 +152,15 @@ export default async function handler(req, res) {
       const files = fs.readdirSync(os.tmpdir());
       console.log("🚀 ~ truncate_silence.js ~ form.parse ~ files:", files);
       fs.createReadStream(outputPath).pipe(res);
-      clearTmpFolder(tmpPath);
+      await new Promise((resolve, reject) => {
+        res.on("finish", resolve); // when response is fully sent
+        res.on("error", reject); // if there is an error
+      });
     } catch (err) {
       console.error("Processing error:", err);
       res.status(500).send("Processing failed");
-      clearTmpFolder(tmpPath);
+    } finally {
+      clearFolder(tmpPath);
     }
   });
 }
@@ -199,7 +203,7 @@ function getSegments(logs, silenceDuration, audioLength) {
   return segments;
 }
 
-function clearTmpFolder(folderPath) {
+function clearFolder(folderPath) {
   const files = fs.readdirSync(folderPath);
   files.forEach((file) => fs.unlinkSync(path.join(folderPath, file)));
 }
