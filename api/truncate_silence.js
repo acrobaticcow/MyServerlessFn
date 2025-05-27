@@ -102,6 +102,7 @@ export default async function handler(req, res) {
               .on("error", reject)
               .run();
           });
+          await waitUntilFileIsStable(segFile);
           segmentFiles.push(segFile);
         } else {
           const segFile = path.join(tmpPath, `seg_${i}_silence.wav`);
@@ -115,6 +116,7 @@ export default async function handler(req, res) {
               .on("error", reject)
               .run();
           });
+          await waitUntilFileIsStable(segFile);
           segmentFiles.push(segFile);
         }
       }
@@ -247,3 +249,26 @@ const parseOrError = (value, name, options = {}) => {
 
   return num;
 };
+
+function waitUntilFileIsStable(file, tries = 5, delay = 100) {
+  return new Promise((resolve, reject) => {
+    let prevSize = -1;
+    let count = 0;
+
+    const interval = setInterval(() => {
+      if (!fs.existsSync(file)) return;
+      const size = fs.statSync(file).size;
+      if (size === prevSize) {
+        clearInterval(interval);
+        resolve();
+      } else {
+        prevSize = size;
+        count++;
+        if (count >= tries) {
+          clearInterval(interval);
+          reject(new Error(`File ${file} is not stabilizing.`));
+        }
+      }
+    }, delay);
+  });
+}
