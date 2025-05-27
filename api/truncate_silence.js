@@ -149,6 +149,8 @@ export default async function handler(req, res) {
         "Content-Length": stat.size,
         "Content-Disposition": 'attachment; filename="truncate_silence.mp3"',
       });
+      const files = fs.readdirSync(os.tmpdir());
+      console.log("🚀 ~ truncate_silence.js ~ form.parse ~ files:", files);
       fs.createReadStream(outputPath).pipe(res);
     } catch (err) {
       console.error("Processing error:", err);
