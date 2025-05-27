@@ -200,9 +200,8 @@ function getSegments(logs, silenceDuration, audioLength) {
 }
 
 function clearTmpFolder(folderPath) {
-  const tmpDir = path.join(process.cwd(), folderPath);
   const files = fs.readdirSync(tmpDir);
-  files.forEach((file) => fs.unlinkSync(path.join(tmpDir, file)));
+  files.forEach((file) => fs.unlinkSync(path.join(folderPath, file)));
 }
 
 function getDurationWithFFmpeg(filePath) {
