@@ -4,6 +4,7 @@ import { path as ffmpegPath } from "@ffmpeg-installer/ffmpeg";
 import os from "node:os";
 import ffmpeg from "fluent-ffmpeg";
 import path from "path";
+import { clearFolder } from "../utils.js";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -20,31 +21,41 @@ export default async function handler(req, res) {
     return res.status(405).send("Method Not Allowed");
   }
 
+  const oneTimePath = path.join(tmpPath, Date.now().toString());
+  fs.mkdirSync(oneTimePath, { recursive: true });
+
   const form = new formidable.IncomingForm({
-    uploadDir: tmpPath,
+    uploadDir: oneTimePath,
     keepExtensions: true,
   });
 
   form.parse(req, async (err, fields, files) => {
-    if (err) {
-      console.error("Form parse error:", err);
-      return res.status(500).send("Form parsing failed");
-    }
-
-    const audioFile = files.audio?.path;
-
-    if (!audioFile) {
-      return res.status(400).send("Missing audio file");
-    }
-
+    const audioFile = files.audio?.path || files.audio?.filepath;
     const percent = parseFloat(fields.tempo);
-    if (isNaN(percent)) {
-      return res.status(400).send("Invalid tempo percentage");
-    }
-
     const multiplier = 1 + percent / 100;
-    if (multiplier <= 0) {
-      return res.status(400).send("Tempo multiplier must be positive");
+    try {
+      if (err) {
+        console.error("Form parse error:", err);
+        throw new Error("Form parsing failed");
+      }
+
+      if (!audioFile) {
+        throw new Error("Missing audio file");
+      }
+
+      if (isNaN(percent)) {
+        throw new Error("Invalid tempo percentage");
+      }
+
+      if (multiplier <= 0) {
+        throw new Error("Tempo multiplier must be positive");
+      }
+      // rest of your code continues...
+    } catch (error) {
+      console.error(error);
+      res.status(400).send(error.message);
+      clearFolder(oneTimePath);
+      return;
     }
 
     // Construct atempo filter chain for FFmpeg
@@ -58,26 +69,38 @@ export default async function handler(req, res) {
     atempoChain.push(`atempo=${remaining.toFixed(5)}`);
     const filter = atempoChain.join(",");
 
-    const outputPath = path.join(tmpPath, `tempo-changed-${Date.now()}.mp3`);
-    ffmpeg(audioFile)
-      .audioFilters(filter)
-      .audioCodec("libmp3lame")
-      .audioBitrate("128k")
-      .outputOptions("-ar 44100")
-      .output(outputPath)
-      .on("end", () => {
-        const stat = fs.statSync(outputPath);
-        res.writeHead(200, {
-          "Content-Type": "audio/mpeg",
-          "Content-Length": stat.size,
-          "Content-Disposition": 'attachment; filename="tempo_changed.mp3"',
-        });
-        fs.createReadStream(outputPath).pipe(res);
-      })
-      .on("error", (err) => {
-        console.error("FFmpeg error:", err);
-        res.status(500).send("Audio processing failed");
-      })
-      .run();
+    const outputPath = path.join(
+      oneTimePath,
+      `tempo-changed-${Date.now()}.mp3`
+    );
+    try {
+      await new Promise((resolve, reject) => {
+        ffmpeg(audioFile)
+          .audioFilters(filter)
+          .audioCodec("libmp3lame")
+          .audioBitrate("128k")
+          .outputOptions("-ar 44100")
+          .output(outputPath)
+          .on("end", resolve)
+          .on("error", reject)
+          .run();
+      });
+      const stat = fs.statSync(outputPath);
+      res.writeHead(200, {
+        "Content-Type": "audio/mpeg",
+        "Content-Length": stat.size,
+        "Content-Disposition": 'attachment; filename="tempo_changed.mp3"',
+      });
+      fs.createReadStream(outputPath).pipe(res);
+      await new Promise((resolve, reject) => {
+        res.on("finish", resolve); // when response is fully sent
+        res.on("error", reject); // if there is an error
+      });
+    } catch (err) {
+      console.error("FFmpeg error:", err);
+      res.status(500).send("Audio processing failed");
+    } finally {
+      clearFolder(oneTimePath);
+    }
   });
 }

@@ -4,6 +4,7 @@ import ffmpeg from "fluent-ffmpeg";
 import formidable from "formidable-serverless";
 import path from "path";
 import os from "node:os";
+import { clearFolder } from "../utils.js";
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
@@ -15,18 +16,43 @@ export const config = {
 
 const tmpPath = os.tmpdir();
 
+/**
+ * Handles HTTP POST requests to process an uploaded audio file by detecting silences,
+ * truncating them to a specified duration, and returning the processed audio.
+ *
+ * Expects a multipart/form-data POST request with the following fields:
+ * - audio: The audio file to process (required).
+ * - threshold: Silence detection threshold in dB (number, required, between -100 and 0).
+ * - detection_duration: Minimum duration (in seconds) to consider as silence (number, required, >= 0.01).
+ * - truncate_to: Duration (in seconds) to truncate detected silences to (number, required, >= 0.0).
+ *
+ * The handler performs the following steps:
+ * 1. Parses and validates the input fields and file.
+ * 2. Detects silence segments in the audio using ffmpeg.
+ * 3. Splits the audio into segments, truncating silences as specified.
+ * 4. Concatenates the processed segments into a single output file.
+ * 5. Streams the resulting audio file back to the client as an attachment.
+ * 6. Cleans up temporary files after processing.
+ *
+ * @param {import('next').NextApiRequest} req - The HTTP request object.
+ * @param {import('next').NextApiResponse} res - The HTTP response object.
+ * @returns {Promise<void>}
+ */
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).send("Method Not Allowed");
 
+  const oneTimePath = path.join(tmpPath, Date.now().toString());
+  fs.mkdirSync(oneTimePath, { recursive: true });
+
   const form = new formidable.IncomingForm({
-    uploadDir: tmpPath,
+    uploadDir: oneTimePath,
     keepExtensions: true,
   });
 
   form.parse(req, async (err, fields, files) => {
     if (err) return res.status(500).send("Upload error");
 
-    const inputPath = files.audio?.path;
+    const inputPath = files.audio?.filepath || files.audio?.path;
     let threshold, detection_duration, truncate_to;
     const silenceLog = [];
 
@@ -92,7 +118,7 @@ export default async function handler(req, res) {
         const s = segments[i];
 
         if (s.type === "audio") {
-          const segFile = path.join(tmpPath, `seg_${i}.wav`);
+          const segFile = path.join(oneTimePath, `seg_${i}.wav`);
           await new Promise((resolve, reject) => {
             ffmpeg(inputPath)
               .setStartTime(s.start)
@@ -105,7 +131,7 @@ export default async function handler(req, res) {
           await waitUntilFileIsStable(segFile);
           segmentFiles.push(segFile);
         } else {
-          const segFile = path.join(tmpPath, `seg_${i}_silence.wav`);
+          const segFile = path.join(oneTimePath, `seg_${i}_silence.wav`);
           await new Promise((resolve, reject) => {
             ffmpeg()
               .input("anullsrc=channel_layout=mono:sample_rate=44100")
@@ -122,14 +148,14 @@ export default async function handler(req, res) {
       }
 
       // 4. Write concat list
-      const listFile = path.join(tmpPath, "list.txt");
+      const listFile = path.join(oneTimePath, "list.txt");
       fs.writeFileSync(
         listFile,
         segmentFiles.map((f) => `file '${f}'`).join("\n")
       );
 
       // 5. Concat to output
-      const outputPath = path.join(tmpPath, "output.mp3");
+      const outputPath = path.join(oneTimePath, "output.mp3");
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(listFile)
@@ -149,8 +175,6 @@ export default async function handler(req, res) {
         "Content-Length": stat.size,
         "Content-Disposition": 'attachment; filename="truncate_silence.mp3"',
       });
-      const files = fs.readdirSync(os.tmpdir());
-      console.log("🚀 ~ truncate_silence.js ~ form.parse ~ files:", files);
       fs.createReadStream(outputPath).pipe(res);
       await new Promise((resolve, reject) => {
         res.on("finish", resolve); // when response is fully sent
@@ -160,7 +184,7 @@ export default async function handler(req, res) {
       console.error("Processing error:", err);
       res.status(500).send("Processing failed");
     } finally {
-      clearFolder(tmpPath);
+      clearFolder(oneTimePath);
     }
   });
 }
@@ -201,15 +225,6 @@ function getSegments(logs, silenceDuration, audioLength) {
     }
   }
   return segments;
-}
-
-function clearFolder(folderPath) {
-  const files = fs.readdirSync(folderPath);
-  files.forEach((file) => {
-    if (!/^vercel-.*\.sock$/.test(file)) {
-      fs.unlinkSync(path.join(folderPath, file));
-    }
-  });
 }
 
 function getDurationWithFFmpeg(filePath) {
