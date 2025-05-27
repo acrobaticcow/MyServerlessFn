@@ -205,7 +205,11 @@ function getSegments(logs, silenceDuration, audioLength) {
 
 function clearFolder(folderPath) {
   const files = fs.readdirSync(folderPath);
-  files.forEach((file) => fs.unlinkSync(path.join(folderPath, file)));
+  files.forEach((file) => {
+    if (!/^vercel-.*\.sock$/.test(file)) {
+      fs.unlinkSync(path.join(folderPath, file));
+    }
+  });
 }
 
 function getDurationWithFFmpeg(filePath) {
