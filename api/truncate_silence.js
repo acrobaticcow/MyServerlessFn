@@ -200,7 +200,7 @@ function getSegments(logs, silenceDuration, audioLength) {
 }
 
 function clearTmpFolder(folderPath) {
-  const files = fs.readdirSync(tmpDir);
+  const files = fs.readdirSync(folderPath);
   files.forEach((file) => fs.unlinkSync(path.join(folderPath, file)));
 }
 
