@@ -57,18 +57,20 @@ export default async function handler(req, res) {
     }
     atempoChain.push(`atempo=${remaining.toFixed(5)}`);
     const filter = atempoChain.join(",");
-    console.log("🚀 ~ change_tempo.js ~ form.parse ~ filter:", filter);
 
-    const outputPath = path.join(tmpPath, `tempo-changed-${Date.now()}.wav`);
+    const outputPath = path.join(tmpPath, `tempo-changed-${Date.now()}.mp3`);
     ffmpeg(audioFile)
       .audioFilters(filter)
+      .audioCodec("libmp3lame")
+      .audioBitrate("128k")
+      .outputOptions("-ar 44100")
       .output(outputPath)
       .on("end", () => {
         const stat = fs.statSync(outputPath);
         res.writeHead(200, {
-          "Content-Type": "audio/wav",
+          "Content-Type": "audio/mpeg",
           "Content-Length": stat.size,
-          "Content-Disposition": 'attachment; filename="tempo_changed.wav"',
+          "Content-Disposition": 'attachment; filename="tempo_changed.mp3"',
         });
         fs.createReadStream(outputPath).pipe(res);
       })

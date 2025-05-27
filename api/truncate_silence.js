@@ -129,12 +129,14 @@ export default async function handler(req, res) {
       );
 
       // 5. Concat to output
-      const outputPath = path.join(tmpPath, "output.wav");
+      const outputPath = path.join(tmpPath, "output.mp3");
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(listFile)
           .inputOptions(["-f", "concat", "-safe", "0"])
-          .outputOptions(["-c", "copy"])
+          .audioCodec("libmp3lame")
+          .audioBitrate("128k")
+          .outputOptions("-ar 44100") // optional: sample rate
           .output(outputPath)
           .on("end", resolve)
           .on("error", reject)
@@ -145,7 +147,7 @@ export default async function handler(req, res) {
       res.writeHead(200, {
         "Content-Type": "audio/wav",
         "Content-Length": stat.size,
-        "Content-Disposition": 'attachment; filename="truncate_silence.wav"',
+        "Content-Disposition": 'attachment; filename="truncate_silence.mp3"',
       });
       fs.createReadStream(outputPath).pipe(res);
     } catch (err) {
