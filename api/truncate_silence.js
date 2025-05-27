@@ -155,6 +155,8 @@ export default async function handler(req, res) {
     } catch (err) {
       console.error("Processing error:", err);
       res.status(500).send("Processing failed");
+    } finally {
+      clearTmpFolder(tmpPath);
     }
   });
 }
@@ -197,8 +199,8 @@ function getSegments(logs, silenceDuration, audioLength) {
   return segments;
 }
 
-function clearTmpFolder() {
-  const tmpDir = path.join(process.cwd(), "tmp");
+function clearTmpFolder(folderPath) {
+  const tmpDir = path.join(process.cwd(), folderPath);
   const files = fs.readdirSync(tmpDir);
   files.forEach((file) => fs.unlinkSync(path.join(tmpDir, file)));
 }
