@@ -152,10 +152,10 @@ export default async function handler(req, res) {
       const files = fs.readdirSync(os.tmpdir());
       console.log("🚀 ~ truncate_silence.js ~ form.parse ~ files:", files);
       fs.createReadStream(outputPath).pipe(res);
+      clearTmpFolder(tmpPath);
     } catch (err) {
       console.error("Processing error:", err);
       res.status(500).send("Processing failed");
-    } finally {
       clearTmpFolder(tmpPath);
     }
   });
