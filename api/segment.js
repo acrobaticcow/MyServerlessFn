@@ -1,12 +1,60 @@
-const text =
-  'Ronaldo de Lima ने एक बार सभी को चौंका दिया था जब उन्होंने Figo की पत्नी को अपनी जंगली पार्टी जीवनशैली का कारण बताया। जब वे 2000 के दशक में रियल मैड्रिड के लिए खेलते थे, तब Ronaldo और Roberto Carlos ने कुछ वाकई पागलपन भरी रातें बिताईं, जितनी किसी ने कल्पना भी नहीं की थी। Ronaldo ने तो यहां तक ​​कहा कि वे Roberto Carlos के साथ बाहर उतनी बार गए, जितनी बार वे अपनी सभी पत्नियों के साथ कभी नहीं गए। उनकी पार्टी करने की आदत इतनी तीव्र थी कि क्लब के अध्यक्ष Florentino Pérez को चिंता होने लगी। Pérez ने वास्तव में Ronaldo को चेतावनी दी थी कि वे इतनी अधिक पार्टी करना बंद करें और घर पर अधिक समय बिताएं, क्योंकि वे तीन मैचों में नहीं खेल पाए और एक मैच के लिए घायल भी हो गए। लेकिन Ronaldo का जवाब अविस्मरणीय था, जिसने Pérez को बिल्कुल चुप कर दिया। उन्होंने कहा, "पूरे सम्मान के साथ, अगर मेरी पत्नी Figo जैसी होती, तो मैं भी अधिक घर पर रहता और बहुत कम पार्टी करता।" बेशक, Ronaldo मजाक कर रहे थे, लेकिन सच्चाई साफ थी: Figo की पत्नी Helen Svedin एक सुंदर स्वीडिश सुपरमॉडल हैं, जिनके सुनहरे बाल और नीली आंखें हैं, लगभग एक परी-कथा की राजकुमारी जैसी। फिर Ronaldo घर पर क्यों न रहना चाहें? जब Figo ने Ronaldo की यह बात सुनी तो वे पहले गुस्सा हो गए, लेकिन जल्दी ही उन्हें माफ कर दिया क्योंकि वे जानते थे कि ब्राजीलियन खिलाड़ी अक्सर इस तरह के मजाक करते हैं। आज, Ronaldo और Figo दोनों खुशी-खुशी अपनी जिंदगी जी रहे हैं, और उन जंगली पार्टी के दिनों को पीछे छोड़ चुके हैं।\n\n';
+/**
+ * Compares a joined array of strings with a text after normalizing both.
+ * Normalization trims and replaces multiple spaces with a single space.
+ * @param {string[]} arr - Array of strings to join and normalize.
+ * @param {string} text - Text to normalize and compare.
+ * @returns {boolean} - True if normalized contents are equal, false otherwise.
+ */
+function compareNormalized(arr, text) {
+  /**
+   * @param str {string}
+   */
+  const normalize = (str) => str.split(/\s+/).filter(Boolean).join(" ").trim();
+
+  const normalizedArr = normalize(arr.join(" ").normalize()).normalize();
+  const normalizedText = normalize(text.normalize()).normalize();
+
+  if (normalizedArr === normalizedText) {
+    return {
+      equal: true,
+      arrValue: normalizedArr,
+      textValue: normalizedText,
+      diff: null,
+    };
+  }
+
+  // Find the first difference
+  const arrWords = normalizedArr.split(" ");
+  const textWords = normalizedText.split(" ");
+  let diffIndex = -1;
+  for (let i = 0; i < Math.max(arrWords.length, textWords.length); i++) {
+    if (arrWords[i] !== textWords[i]) {
+      diffIndex = i;
+      break;
+    }
+  }
+
+  return {
+    equal: false,
+    arrValue: normalizedArr,
+    textValue: normalizedText,
+    diff: {
+      index: diffIndex,
+      arr: arrWords[diffIndex] ?? null,
+      text: textWords[diffIndex] ?? null,
+    },
+  };
+}
 
 export default function handler(req, res) {
+  const { code, text } = req.body;
   try {
-    const segmenter = new Intl.Segmenter("ar", { granularity: "sentence" });
+    const segmenter = new Intl.Segmenter(code, { granularity: "sentence" });
     const sentences = Array.from(segmenter.segment(text)).map((s) => s.segment);
     console.log("🚀 ~ segment.js ~ handler ~ sentences:", sentences);
-    res.status(200).json({ sentences });
+    const compare = compareNormalized(sentences, text);
+    console.log("🚀 ~ segment.js ~ handler ~ compare:", compare);
+    res.status(200).json({ sentences, compare });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
