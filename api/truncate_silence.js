@@ -110,6 +110,33 @@ export default async function handler(req, res) {
           );
       });
       // 2. Compute segments
+      if (!silenceLog.length) {
+        // No silence detected, just return the original file as mp3
+        const outputPath = path.join(oneTimePath, "output.mp3");
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .audioCodec("libmp3lame")
+            .audioBitrate("128k")
+            .outputOptions("-ar 44100")
+            .output(outputPath)
+            .on("end", resolve)
+            .on("error", reject)
+            .run();
+        });
+        const stat = fs.statSync(outputPath);
+        res.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Content-Length": stat.size,
+          "Content-Disposition": 'attachment; filename="truncate_silence.mp3"',
+        });
+        fs.createReadStream(outputPath).pipe(res);
+        await new Promise((resolve, reject) => {
+          res.on("finish", resolve);
+          res.on("error", reject);
+        });
+        return;
+      }
+
       const segments = getSegments(silenceLog, truncate_to, audioLength);
       const segmentFiles = [];
 
