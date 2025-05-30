@@ -59,32 +59,8 @@ export default async function handler(req, res) {
     }
 
     // Construct atempo filter chain for FFmpeg
-    const atempoChain = [];
-    let remaining = multiplier;
-    while (remaining < 0.5 || remaining > 2.0) {
-      const step = remaining > 2.0 ? 2.0 : 0.5;
-      atempoChain.push(`atempo=${step}`);
-      remaining /= step;
-    }
-    atempoChain.push(`atempo=${remaining.toFixed(5)}`);
-    const filter = atempoChain.join(",");
-
-    const outputPath = path.join(
-      oneTimePath,
-      `tempo-changed-${Date.now()}.mp3`
-    );
     try {
-      await new Promise((resolve, reject) => {
-        ffmpeg(audioFile)
-          .audioFilters(filter)
-          .audioCodec("libmp3lame")
-          .audioBitrate("128k")
-          .outputOptions("-ar 44100")
-          .output(outputPath)
-          .on("end", resolve)
-          .on("error", reject)
-          .run();
-      });
+      const outputPath = await change_tempo(audioFile, multiplier, oneTimePath);
       const stat = fs.statSync(outputPath);
       res.writeHead(200, {
         "Content-Type": "audio/mpeg",
@@ -103,4 +79,30 @@ export default async function handler(req, res) {
       clearFolder(oneTimePath);
     }
   });
+}
+
+export async function change_tempo(inputPath, multiplier, outputDir) {
+  const atempoChain = [];
+  let remaining = multiplier;
+  while (remaining < 0.5 || remaining > 2.0) {
+    const step = remaining > 2.0 ? 2.0 : 0.5;
+    atempoChain.push(`atempo=${step}`);
+    remaining /= step;
+  }
+  atempoChain.push(`atempo=${remaining.toFixed(5)}`);
+  const filter = atempoChain.join(",");
+
+  const outputPath = path.join(outputDir, `tempo-changed-${Date.now()}.mp3`);
+  await new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .audioFilters(filter)
+      .audioCodec("libmp3lame")
+      .audioBitrate("128k")
+      .outputOptions("-ar 44100")
+      .output(outputPath)
+      .on("end", resolve)
+      .on("error", reject)
+      .run();
+  });
+  return outputPath;
 }

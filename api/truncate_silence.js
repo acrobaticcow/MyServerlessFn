@@ -54,7 +54,6 @@ export default async function handler(req, res) {
 
     const inputPath = files.audio?.filepath || files.audio?.path;
     let threshold, detection_duration, truncate_to;
-    const silenceLog = [];
 
     if (!inputPath) {
       return res.status(400).send("Missing audio file");
@@ -81,121 +80,13 @@ export default async function handler(req, res) {
 
     // Example usage:
     try {
-      // 1. Detect silence
-      const audioLength = await getDurationWithFFmpeg(inputPath);
-      await new Promise((resolve, reject) => {
-        ffmpeg(inputPath)
-          .noVideo()
-          .audioFilters(
-            `silencedetect=noise=${threshold}dB:d=${detection_duration}`
-          )
-          .outputOptions("-f", "null") // force null output
-          .on("stderr", (line) => {
-            // console.log("🚀 ~ truncate_silence.js ~ .on ~ line:", line);
-            const start = line.match(/silence_start: (\d+\.\d+)/);
-            const end = line.match(/silence_end: (\d+\.\d+)/);
-
-            if (start)
-              silenceLog.push({ type: "start", time: parseFloat(start[1]) });
-            if (end) silenceLog.push({ type: "end", time: parseFloat(end[1]) });
-          })
-          .on("end", resolve)
-          .on("error", reject)
-          .saveToFile(
-            process.platform === "win32"
-              ? "NUL"
-              : process.platform === "linux"
-              ? "/dev/null"
-              : ""
-          );
-      });
-      // 2. Compute segments
-      if (!silenceLog.length) {
-        // No silence detected, just return the original file as mp3
-        const outputPath = path.join(oneTimePath, "output.mp3");
-        await new Promise((resolve, reject) => {
-          ffmpeg(inputPath)
-            .audioCodec("libmp3lame")
-            .audioBitrate("128k")
-            .outputOptions("-ar 44100")
-            .output(outputPath)
-            .on("end", resolve)
-            .on("error", reject)
-            .run();
-        });
-        const stat = fs.statSync(outputPath);
-        res.writeHead(200, {
-          "Content-Type": "audio/wav",
-          "Content-Length": stat.size,
-          "Content-Disposition": 'attachment; filename="truncate_silence.mp3"',
-        });
-        fs.createReadStream(outputPath).pipe(res);
-        await new Promise((resolve, reject) => {
-          res.on("finish", resolve);
-          res.on("error", reject);
-        });
-        return;
-      }
-
-      const segments = getSegments(silenceLog, truncate_to, audioLength);
-      const segmentFiles = [];
-
-      // 3. Extract audio segments and generate silences
-      for (let i = 0; i < segments.length; i++) {
-        const s = segments[i];
-
-        if (s.type === "audio") {
-          const segFile = path.join(oneTimePath, `seg_${i}.wav`);
-          await new Promise((resolve, reject) => {
-            ffmpeg(inputPath)
-              .setStartTime(s.start)
-              .setDuration(s.duration)
-              .output(segFile)
-              .on("end", resolve)
-              .on("error", reject)
-              .run();
-          });
-          await waitUntilFileIsStable(segFile);
-          segmentFiles.push(segFile);
-        } else {
-          const segFile = path.join(oneTimePath, `seg_${i}_silence.wav`);
-          await new Promise((resolve, reject) => {
-            ffmpeg()
-              .input("anullsrc=channel_layout=mono:sample_rate=44100")
-              .inputOptions(["-f", "lavfi"])
-              .outputOptions([`-t ${s.duration}`])
-              .output(segFile)
-              .on("end", resolve)
-              .on("error", reject)
-              .run();
-          });
-          await waitUntilFileIsStable(segFile);
-          segmentFiles.push(segFile);
-        }
-      }
-
-      // 4. Write concat list
-      const listFile = path.join(oneTimePath, "list.txt");
-      fs.writeFileSync(
-        listFile,
-        segmentFiles.map((f) => `file '${f}'`).join("\n")
+      const outputPath = await truncate_silence(
+        inputPath,
+        threshold,
+        detection_duration,
+        truncate_to,
+        oneTimePath
       );
-
-      // 5. Concat to output
-      const outputPath = path.join(oneTimePath, "output.mp3");
-      await new Promise((resolve, reject) => {
-        ffmpeg()
-          .input(listFile)
-          .inputOptions(["-f", "concat", "-safe", "0"])
-          .audioCodec("libmp3lame")
-          .audioBitrate("128k")
-          .outputOptions("-ar 44100") // optional: sample rate
-          .output(outputPath)
-          .on("end", resolve)
-          .on("error", reject)
-          .run();
-      });
-
       const stat = fs.statSync(outputPath);
       res.writeHead(200, {
         "Content-Type": "audio/wav",
@@ -326,4 +217,117 @@ function waitUntilFileIsStable(file, tries = 5, delay = 100) {
       }
     }, delay);
   });
+}
+
+export async function truncate_silence(
+  inputPath,
+  threshold,
+  detection_duration,
+  truncate_to,
+  outputDir
+) {
+  // 1. Detect silence
+  const audioLength = await getDurationWithFFmpeg(inputPath);
+  const silenceLog = [];
+  await new Promise((resolve, reject) => {
+    ffmpeg(inputPath)
+      .noVideo()
+      .audioFilters(
+        `silencedetect=noise=${threshold}dB:d=${detection_duration}`
+      )
+      .outputOptions("-f", "null") // force null output
+      .on("stderr", (line) => {
+        // console.log("🚀 ~ truncate_silence.js ~ .on ~ line:", line);
+        const start = line.match(/silence_start: (\d+\.\d+)/);
+        const end = line.match(/silence_end: (\d+\.\d+)/);
+
+        if (start)
+          silenceLog.push({ type: "start", time: parseFloat(start[1]) });
+        if (end) silenceLog.push({ type: "end", time: parseFloat(end[1]) });
+      })
+      .on("end", resolve)
+      .on("error", reject)
+      .saveToFile(
+        process.platform === "win32"
+          ? "NUL"
+          : process.platform === "linux"
+          ? "/dev/null"
+          : ""
+      );
+  });
+  // 2. Compute segments
+  if (!silenceLog.length) {
+    // No silence detected, just return the original file as mp3
+    const outputPath = path.join(outputDir, "output.mp3");
+    await new Promise((resolve, reject) => {
+      ffmpeg(inputPath)
+        .audioCodec("libmp3lame")
+        .audioBitrate("128k")
+        .outputOptions("-ar 44100")
+        .output(outputPath)
+        .on("end", resolve)
+        .on("error", reject)
+        .run();
+    });
+    return outputPath;
+  }
+
+  const segments = getSegments(silenceLog, truncate_to, audioLength);
+  const segmentFiles = [];
+
+  // 3. Extract audio segments and generate silences
+  for (let i = 0; i < segments.length; i++) {
+    const s = segments[i];
+
+    if (s.type === "audio") {
+      const segFile = path.join(outputDir, `seg_${i}.wav`);
+      await new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+          .setStartTime(s.start)
+          .setDuration(s.duration)
+          .output(segFile)
+          .on("end", resolve)
+          .on("error", reject)
+          .run();
+      });
+      // TODO delete this
+      //   await waitUntilFileIsStable(segFile);
+      segmentFiles.push(segFile);
+    } else {
+      const segFile = path.join(outputDir, `seg_${i}_silence.wav`);
+      await new Promise((resolve, reject) => {
+        ffmpeg()
+          .input("anullsrc=channel_layout=mono:sample_rate=44100")
+          .inputOptions(["-f", "lavfi"])
+          .outputOptions([`-t ${s.duration}`])
+          .output(segFile)
+          .on("end", resolve)
+          .on("error", reject)
+          .run();
+      });
+      // TODO delete this
+      //   await waitUntilFileIsStable(segFile);
+      segmentFiles.push(segFile);
+    }
+  }
+
+  // 4. Write concat list
+  const listFile = path.join(outputDir, "list.txt");
+  fs.writeFileSync(listFile, segmentFiles.map((f) => `file '${f}'`).join("\n"));
+
+  // 5. Concat to output
+  const outputPath = path.join(outputDir, "output.mp3");
+  await new Promise((resolve, reject) => {
+    ffmpeg()
+      .input(listFile)
+      .inputOptions(["-f", "concat", "-safe", "0"])
+      .audioCodec("libmp3lame")
+      .audioBitrate("128k")
+      .outputOptions("-ar 44100") // optional: sample rate
+      .output(outputPath)
+      .on("end", resolve)
+      .on("error", reject)
+      .run();
+  });
+  return outputPath;
 }

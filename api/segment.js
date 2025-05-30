@@ -70,15 +70,40 @@ function groupSentencesByWordCount(sentences, maxWords = 100) {
   return blocks;
 }
 
+function groupSentencesByCharCount(sentences, maxChars = 1000) {
+  const blocks = [];
+  let currentBlock = "";
+  for (const sentence of sentences) {
+    if (
+      (currentBlock + sentence).length > maxChars &&
+      currentBlock.length > 0
+    ) {
+      blocks.push(currentBlock);
+      currentBlock = "";
+    }
+    currentBlock += sentence;
+  }
+  if (currentBlock.length > 0) {
+    blocks.push(currentBlock);
+  }
+  return blocks;
+}
+
 export default function handler(req, res) {
-  const { code, text, wordCount = 75 } = req.body;
+  const { code, text, wordCount = 20, charCount = 300 } = req.body;
   try {
     const segmenter = new Intl.Segmenter(code, {
       granularity: "sentence",
     });
     const sentences = Array.from(segmenter.segment(text)).map((s) => s.segment);
-    const blocks = groupSentencesByWordCount(sentences, wordCount);
-    res.status(200).json({ blocks });
+    const blocks = groupSentencesByCharCount(sentences, charCount);
+    const linkedBlocks = blocks.map((block, i, arr) => ({
+      prev: i > 0 ? arr[i - 1] : null,
+      current: block,
+      next: i < arr.length - 1 ? arr[i + 1] : null,
+    }));
+
+    res.status(200).json({ blocks, linkedBlocks });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
