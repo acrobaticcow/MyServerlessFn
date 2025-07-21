@@ -42,7 +42,6 @@ const tmpPath = os.tmpdir();
  */
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    clearFolder(outputDir);
     return res.status(405).send("Method Not Allowed");
   }
 
