@@ -121,20 +121,20 @@ function getSegments(logs, silenceDuration, audioLength) {
         segments.push({
           type: "audio",
           start: lastEnd,
-          duration: start - lastEnd,
+          duration: Math.trunc((start - lastEnd) * 100) / 100,
         });
       }
 
       segments.push({
         type: "silence",
-        duration: silenceDuration,
+        duration: Math.trunc(silenceDuration * 100) / 100,
       });
 
       if (end === logs[logs.length - 1].time && end < audioLength) {
         segments.push({
           type: "audio",
           start: end,
-          duration: audioLength - end,
+          duration: Math.trunc((audioLength - end) * 100) / 100,
         });
       }
 

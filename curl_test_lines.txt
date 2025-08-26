@@ -1,0 +1,11 @@
+audio_edit: 
+curl -X POST \
+  -F audio=@./test_audio/SP1.mp3 \
+  -F threshold=-35 \
+  -F detection_duration=0.3 \
+  -F truncate_to=0.2 \
+  -F tempo=8.50 \
+  -o output.mp3 \
+http://localhost:3000/api/audio_edit
+
+curl -X POST -F "audio=@D:/Code/MyServerlessFn/test_audio/Against All Logic - Faith.mp3" -F "threshold=-35" -F "detection_duration=0.3" -F "truncate_to=0.2" -F "tempo=8.50" -o output.mp3 http://localhost:3000/api/audio_edit
